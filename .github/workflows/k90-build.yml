@@ -38,6 +38,14 @@ jobs:
           brew install make
           gmake --version
 
+      - name: Provide nproc on macOS
+        run: |
+          set -euo pipefail
+          printf '#!/bin/sh\nsysctl -n hw.ncpu\n' | sudo tee /usr/local/bin/nproc >/dev/null
+          sudo chmod +x /usr/local/bin/nproc
+          echo "/usr/local/bin" >> "$GITHUB_PATH"
+          nproc
+
       - name: Apply XNU 12377 patches
         working-directory: kernel
         env:
@@ -112,14 +120,16 @@ jobs:
           submodules: false
           fetch-depth: 1
 
-      - name: Install LLVM
+      - name: Install LLVM and LLD
         run: |
           set -euo pipefail
-          brew install llvm
+          brew install llvm lld
           LLVM="$(brew --prefix llvm)/bin"
+          LLD="$(brew --prefix lld)/bin"
           echo "$LLVM" >> "$GITHUB_PATH"
+          echo "$LLD" >> "$GITHUB_PATH"
           "$LLVM/clang" --version
-          "$LLVM/lld-link" --version
+          "$LLD/lld-link" --version
 
       - name: Build phone loader
         working-directory: kernel/xnuloader
