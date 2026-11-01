@@ -1,0 +1,80 @@
+name: k90-bootimg
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  bootimg:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Checkout kernel at pinned commit
+        uses: actions/checkout@v4
+        with:
+          repository: iola1999/hackios-xnu-kernel
+          ref: 4cd05c997e80d2162ff0013dbff82fe0c2e695cc
+          path: kernel
+          submodules: false
+          fetch-depth: 1
+
+      - name: Checkout top workspace for the annibale DTB
+        uses: actions/checkout@v4
+        with:
+          repository: iola1999/hackios-redmi-k90-annibale
+          ref: f36fc12afe2c0ac8e56a60677f83789d32c6f779
+          path: top
+          submodules: false
+          fetch-depth: 1
+
+      - name: Install UEFI build tools
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y build-essential clang lld nasm python3 git
+          clang --version
+          ld.lld --version
+
+      - name: Prepare Mu-Silicium and redwood patch
+        working-directory: kernel
+        run: |
+          set -euo pipefail
+          uefi/apply.sh
+
+      - name: Pack loader-only smoke boot image
+        working-directory: kernel
+        env:
+          CC: clang
+          UEFI_TARGET: annibale
+          UEFI_FD: ${{ github.workspace }}/kernel/prebuilt/uefi/annibale-smoke-dodgefv.fd
+          DTB: ${{ github.workspace }}/top/docs/analysis/data/annibale.fdt
+          FD_BASE: "0xA7100000"
+          FD_SIZE: "0x300000"
+          PAYLOAD_BASE: "0xF0000000"
+          PAYLOAD_CAP: "0x03700000"
+        run: |
+          set -euo pipefail
+          mkdir -p out
+          python3 mkxnuimg.py -o out/loader-smoke.img
+          test -s out/loader-smoke.img
+
+      - name: Collect boot image artifact
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          cp kernel/out/loader-smoke.img artifacts/loader-smoke.img
+          shasum -a 256 artifacts/loader-smoke.img | tee artifacts/SHA256SUMS
+          printf 'source_commit=4cd05c997e80d2162ff0013dbff82fe0c2e695cc\n' >> artifacts/BUILD-INFO.txt
+          printf 'uefi=annibale-smoke-dodgefv.fd (smoke, not final)\n' >> artifacts/BUILD-INFO.txt
+          printf 'dtb=docs/analysis/data/annibale.fdt 911637 bytes\n' >> artifacts/BUILD-INFO.txt
+          printf 'purpose=loader enumeration only; no kernel or iOS images\n' >> artifacts/BUILD-INFO.txt
+
+      - name: Upload smoke boot image
+        uses: actions/upload-artifact@v4
+        with:
+          name: k90-loader-smoke-img
+          path: artifacts
+          if-no-files-found: error
+          retention-days: 7
