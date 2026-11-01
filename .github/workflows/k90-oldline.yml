@@ -39,14 +39,15 @@ jobs:
       - name: Install theos and iPhoneOS 16.5 SDK
         run: |
           set -euo pipefail
-          git clone --depth 1 https://github.com/theos/theos.git "$HOME/theos"
-          git -C "$HOME/theos" fetch --depth 1 origin 304e0799973e8145f32e4ca2de6c747a84b758ce
-          git -C "$HOME/theos" checkout -q FETCH_HEAD
-          mkdir -p "$HOME/theos/toolchain"
-          curl -sL --fail https://github.com/L1ghtmann/llvm-project/releases/latest/download/iOSToolchain-x86_64.tar.xz | tar -xJ -C "$HOME/theos/toolchain/"
-          "$HOME/theos/bin/install-sdk" iPhoneOS16.5
-          test -x "$HOME/theos/toolchain/linux/iphone/bin/ld"
-          test -d "$HOME/theos/sdks/iPhoneOS16.5.sdk/usr/include"
+          export THEOS="$HOME/theos"
+          git clone --depth 1 https://github.com/theos/theos.git "$THEOS"
+          git -C "$THEOS" fetch --depth 1 origin 304e0799973e8145f32e4ca2de6c747a84b758ce
+          git -C "$THEOS" checkout -q FETCH_HEAD
+          mkdir -p "$THEOS/toolchain"
+          curl -sL --fail https://github.com/L1ghtmann/llvm-project/releases/latest/download/iOSToolchain-x86_64.tar.xz | tar -xJ -C "$THEOS/toolchain/"
+          "$THEOS/bin/install-sdk" iPhoneOS16.5
+          test -x "$THEOS/toolchain/linux/iphone/bin/ld"
+          test -d "$THEOS/sdks/iPhoneOS16.5.sdk/usr/include"
 
       - name: Apply XNU 8796 patches
         working-directory: kernel
@@ -56,12 +57,16 @@ jobs:
 
       - name: Build host tools and SDK glue
         working-directory: kernel
+        env:
+          THEOS: /home/runner/theos
         run: |
           set -euo pipefail
           xnu-deps/setup.sh
 
       - name: Build 8796 kernel
         working-directory: kernel
+        env:
+          THEOS: /home/runner/theos
         run: |
           set -euo pipefail
           xnu-build.sh -j4 BUILD_DSYM=0 KEXT_CREATE_SYMBOL_SET=/bin/true 2>&1 | tee build-8796.log
@@ -113,10 +118,11 @@ jobs:
         working-directory: kernel
         env:
           USERLAND_URL: https://github.com/iola1999/hackios-xnu-userland.git
-          USERLAND_REF: 1c46c68ac4fefd89b8e0a657a823e8d163db285b
+          USERLAND_REF: k90-port
         run: |
           set -euo pipefail
           common/setup.sh
+          test "$(common/ugit rev-parse HEAD)" = "1c46c68ac4fefd89b8e0a657a823e8d163db285b"
 
       - name: Install image build dependencies
         run: |
