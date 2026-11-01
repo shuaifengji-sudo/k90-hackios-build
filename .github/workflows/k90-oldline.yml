@@ -1,0 +1,159 @@
+name: k90-oldline
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  kernel8796:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 360
+    steps:
+      - name: Free disk space
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: false
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          swap-storage: true
+
+      - name: Checkout kernel at pinned commit
+        uses: actions/checkout@v4
+        with:
+          repository: iola1999/hackios-xnu-kernel
+          ref: 4cd05c997e80d2162ff0013dbff82fe0c2e695cc
+          path: kernel
+          submodules: false
+          fetch-depth: 1
+
+      - name: Install build dependencies
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y git curl ca-certificates tar xz-utils make clang lld python3 perl flex bison m4 autoconf automake libtool pkg-config zlib1g-dev gawk file unzip zstd libzstd-dev bzip2 zip binutils uuid-dev libssl-dev libxml2-dev libbz2-dev liblzma-dev libncurses-dev python-is-python3
+
+      - name: Install theos and iPhoneOS 16.5 SDK
+        run: |
+          set -euo pipefail
+          git clone --depth 1 https://github.com/theos/theos.git "$HOME/theos"
+          git -C "$HOME/theos" fetch --depth 1 origin 304e0799973e8145f32e4ca2de6c747a84b758ce
+          git -C "$HOME/theos" checkout -q FETCH_HEAD
+          mkdir -p "$HOME/theos/toolchain"
+          curl -sL --fail https://github.com/L1ghtmann/llvm-project/releases/latest/download/iOSToolchain-x86_64.tar.xz | tar -xJ -C "$HOME/theos/toolchain/"
+          "$HOME/theos/bin/install-sdk" iPhoneOS16.5
+          test -x "$HOME/theos/toolchain/linux/iphone/bin/ld"
+          test -d "$HOME/theos/sdks/iPhoneOS16.5.sdk/usr/include"
+
+      - name: Apply XNU 8796 patches
+        working-directory: kernel
+        run: |
+          set -euo pipefail
+          xnu/apply.sh
+
+      - name: Build host tools and SDK glue
+        working-directory: kernel
+        run: |
+          set -euo pipefail
+          xnu-deps/setup.sh
+
+      - name: Build 8796 kernel
+        working-directory: kernel
+        run: |
+          set -euo pipefail
+          xnu-build.sh -j4 BUILD_DSYM=0 KEXT_CREATE_SYMBOL_SET=/bin/true 2>&1 | tee build-8796.log
+
+      - name: Collect kernel
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          KERNEL="kernel/xnu-src/xnu-8796.121.2/BUILD/obj/DEVELOPMENT_ARM64_BCM2837/mach.development.bcm2837"
+          test -f "$KERNEL"
+          cp "$KERNEL" artifacts/mach.development.bcm2837
+          shasum -a 256 artifacts/mach.development.bcm2837 | tee artifacts/SHA256SUMS
+          printf 'source_commit=4cd05c997e80d2162ff0013dbff82fe0c2e695cc\n' >> artifacts/BUILD-INFO.txt
+          printf 'line=xnu-8796.121.2 iOS16.5\n' >> artifacts/BUILD-INFO.txt
+          cp kernel/build-8796.log artifacts/build-8796.log
+
+      - name: Upload kernel artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: k90-kernel-8796
+          path: artifacts
+          if-no-files-found: error
+          retention-days: 7
+
+  images165:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 360
+    steps:
+      - name: Free disk space
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: false
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          swap-storage: true
+
+      - name: Checkout kernel at pinned commit
+        uses: actions/checkout@v4
+        with:
+          repository: iola1999/hackios-xnu-kernel
+          ref: 4cd05c997e80d2162ff0013dbff82fe0c2e695cc
+          path: kernel
+          submodules: false
+          fetch-depth: 1
+
+      - name: Bring in userland overlay
+        working-directory: kernel
+        env:
+          USERLAND_URL: https://github.com/iola1999/hackios-xnu-userland.git
+          USERLAND_REF: 1c46c68ac4fefd89b8e0a657a823e8d163db285b
+        run: |
+          set -euo pipefail
+          common/setup.sh
+
+      - name: Install image build dependencies
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y git python3 python3-pip p7zip-full build-essential ccache rsync zlib1g-dev liblz4-dev
+
+      - name: Fetch iOS 16.5 files
+        working-directory: kernel
+        run: |
+          set -euo pipefail
+          ios165/fetch.sh
+
+      - name: Build root and system APFS images
+        working-directory: kernel
+        env:
+          REST: "1"
+          PREBUILT: "1"
+        run: |
+          set -euo pipefail
+          userland/build.sh
+
+      - name: Collect images
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          cp kernel/userland/root.apfs artifacts/root.apfs
+          cp kernel/userland/system.apfs artifacts/system.apfs
+          shasum -a 256 artifacts/root.apfs artifacts/system.apfs | tee artifacts/SHA256SUMS
+          printf 'source_commit=4cd05c997e80d2162ff0013dbff82fe0c2e695cc\n' >> artifacts/BUILD-INFO.txt
+          printf 'line=iOS16.5 REST=1 PREBUILT=1\n' >> artifacts/BUILD-INFO.txt
+          ls -l artifacts
+
+      - name: Upload APFS artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: k90-apfs-165
+          path: artifacts
+          if-no-files-found: error
+          retention-days: 7
