@@ -1,0 +1,88 @@
+name: k90-loaderimg
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  loaderimg:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Checkout kernel at pinned commit
+        uses: actions/checkout@v4
+        with:
+          repository: iola1999/hackios-xnu-kernel
+          ref: 4cd05c997e80d2162ff0013dbff82fe0c2e695cc
+          path: kernel
+          submodules: false
+          fetch-depth: 1
+
+      - name: Install build tools
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y build-essential clang lld llvm nasm python3 git
+          clang --version
+          lld-link --version
+
+      - name: Build phone loader
+        working-directory: kernel/xnuloader
+        env:
+          EXTRA_CFLAGS: -DDIRECT_PHONE_PLAT
+          BUILD_ID: 4cd05c997e80d2162ff0013dbff82fe0c2e695cc
+        run: |
+          set -euo pipefail
+          bash build.sh
+
+      - name: Prepare Mu-Silicium and redwood patch
+        working-directory: kernel
+        run: |
+          set -euo pipefail
+          uefi/apply.sh
+
+      - name: Build loader payload
+        working-directory: kernel
+        run: |
+          set -euo pipefail
+          mkdir -p out
+          python3 xnuloader/mkpayload.py -o out/loader-payload.bin \
+            loader.efi="$PWD/xnuloader/loader-phone.efi" --usb
+
+      - name: Pack loader boot image
+        working-directory: kernel
+        env:
+          CC: clang
+          UEFI_TARGET: annibale
+          UEFI_FD: ${{ github.workspace }}/kernel/prebuilt/uefi/annibale-smoke-dodgefv.fd
+          DTB: ${{ github.workspace }}/kernel/empty.dtb
+          FD_BASE: "0xA7100000"
+          FD_SIZE: "0x300000"
+          PAYLOAD_BASE: "0xF0000000"
+          PAYLOAD_CAP: "0x03700000"
+        run: |
+          set -euo pipefail
+          python3 mkxnuimg.py -p out/loader-payload.bin -o out/loader-live.img
+          test -s out/loader-live.img
+          ls -l out/loader-live.img
+
+      - name: Collect loader image
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          cp kernel/out/loader-live.img artifacts/loader-live.img
+          shasum -a 256 artifacts/loader-live.img | tee artifacts/SHA256SUMS
+          printf 'source_commit=4cd05c997e80d2162ff0013dbff82fe0c2e695cc\n' >> artifacts/BUILD-INFO.txt
+          printf 'uefi=annibale-smoke-dodgefv.fd (smoke, not final)\n' >> artifacts/BUILD-INFO.txt
+          printf 'dtb=empty.dtb (no external DTB; UEFI FD carries its own)\n' >> artifacts/BUILD-INFO.txt
+          printf 'payload=loader.efi + usb, no kernel or iOS images\n' >> artifacts/BUILD-INFO.txt
+
+      - name: Upload loader image
+        uses: actions/upload-artifact@v4
+        with:
+          name: k90-loader-live-img
+          path: artifacts
+          if-no-files-found: error
+          retention-days: 7
