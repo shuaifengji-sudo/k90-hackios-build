@@ -1,0 +1,148 @@
+name: k90-build
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: k90-build-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  kernel:
+    runs-on: macos-26
+    timeout-minutes: 360
+    steps:
+      - name: Checkout kernel at pinned commit
+        uses: actions/checkout@v4
+        with:
+          repository: iola1999/hackios-xnu-kernel
+          ref: 4cd05c997e80d2162ff0013dbff82fe0c2e695cc
+          path: kernel
+          submodules: false
+          fetch-depth: 1
+
+      - name: Show toolchain
+        run: |
+          set -euo pipefail
+          xcodebuild -version
+          xcode-select -p
+          xcrun --sdk iphoneos --show-sdk-path
+          sw_vers
+
+      - name: Install GNU make
+        run: |
+          set -euo pipefail
+          brew install make
+          gmake --version
+
+      - name: Apply XNU 12377 patches
+        working-directory: kernel
+        env:
+          XNU26_SRC: ${{ github.workspace }}/kernel/out/xnu12377
+        run: |
+          set -euo pipefail
+          xnu26/apply.sh
+
+      - name: Fetch macOS build dependencies
+        working-directory: kernel
+        env:
+          XNU26_SRC: ${{ github.workspace }}/kernel/out/xnu12377
+        run: |
+          set -euo pipefail
+          xnu26/deps-macos.sh
+
+      - name: Export kernel headers
+        working-directory: kernel
+        env:
+          XNU26_SRC: ${{ github.workspace }}/kernel/out/xnu12377
+        run: |
+          set -euo pipefail
+          MAKE=gmake xnu26/build-macos.sh exporthdrs installhdrs
+
+      - name: Build stage-2 kernel libraries
+        working-directory: kernel
+        env:
+          XNU26_SRC: ${{ github.workspace }}/kernel/out/xnu12377
+        run: |
+          set -euo pipefail
+          xnu26/deps-macos.sh --stage2
+
+      - name: Build 12377 kernel
+        working-directory: kernel
+        env:
+          XNU26_SRC: ${{ github.workspace }}/kernel/out/xnu12377
+        run: |
+          set -euo pipefail
+          MAKE=gmake xnu26/build-macos.sh -j4 BUILD_DSYM=0 2>&1 | tee build-kernel.log
+
+      - name: Collect kernel artifact
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          KERNEL="kernel/out/xnu12377/BUILD/obj/DEVELOPMENT_ARM64_BCM2837/mach.development.bcm2837"
+          test -f "$KERNEL"
+          cp "$KERNEL" artifacts/mach.development.bcm2837
+          shasum -a 256 artifacts/mach.development.bcm2837 | tee artifacts/SHA256SUMS
+          printf 'source_commit=4cd05c997e80d2162ff0013dbff82fe0c2e695cc\n' >> artifacts/BUILD-INFO.txt
+          printf 'runner=%s\n' "$ImageOS" >> artifacts/BUILD-INFO.txt
+          xcodebuild -version >> artifacts/BUILD-INFO.txt
+          cp kernel/build-kernel.log artifacts/build-kernel.log
+
+      - name: Upload kernel artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: k90-kernel-12377
+          path: artifacts
+          if-no-files-found: error
+          retention-days: 7
+
+  loader:
+    runs-on: macos-26
+    timeout-minutes: 60
+    steps:
+      - name: Checkout kernel at pinned commit
+        uses: actions/checkout@v4
+        with:
+          repository: iola1999/hackios-xnu-kernel
+          ref: 4cd05c997e80d2162ff0013dbff82fe0c2e695cc
+          path: kernel
+          submodules: false
+          fetch-depth: 1
+
+      - name: Install LLVM
+        run: |
+          set -euo pipefail
+          brew install llvm
+          LLVM="$(brew --prefix llvm)/bin"
+          echo "$LLVM" >> "$GITHUB_PATH"
+          "$LLVM/clang" --version
+          "$LLVM/lld-link" --version
+
+      - name: Build phone loader
+        working-directory: kernel/xnuloader
+        env:
+          EXTRA_CFLAGS: -DDIRECT_PHONE_PLAT
+          BUILD_ID: 4cd05c997e80d2162ff0013dbff82fe0c2e695cc
+        run: |
+          set -euo pipefail
+          bash build.sh
+
+      - name: Collect loader artifact
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          cp kernel/xnuloader/loader-phone.efi artifacts/loader-phone.efi
+          shasum -a 256 artifacts/loader-phone.efi | tee artifacts/SHA256SUMS
+          printf 'source_commit=4cd05c997e80d2162ff0013dbff82fe0c2e695cc\n' >> artifacts/BUILD-INFO.txt
+          printf 'build_id=4cd05c997e80d2162ff0013dbff82fe0c2e695cc\n' >> artifacts/BUILD-INFO.txt
+
+      - name: Upload loader artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: k90-loader-phone
+          path: artifacts
+          if-no-files-found: error
+          retention-days: 7
