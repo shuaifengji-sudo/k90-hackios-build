@@ -20,6 +20,15 @@ jobs:
           submodules: false
           fetch-depth: 1
 
+      - name: Checkout top workspace for the annibale DTB
+        uses: actions/checkout@v4
+        with:
+          repository: iola1999/hackios-redmi-k90-annibale
+          ref: f36fc12afe2c0ac8e56a60677f83789d32c6f779
+          path: top
+          submodules: false
+          fetch-depth: 1
+
       - name: Install build tools
         run: |
           set -euo pipefail
@@ -57,7 +66,7 @@ jobs:
           CC: clang
           UEFI_TARGET: annibale
           UEFI_FD: ${{ github.workspace }}/kernel/prebuilt/uefi/annibale-smoke-dodgefv.fd
-          DTB: ${{ github.workspace }}/kernel/empty.dtb
+          DTB: ${{ github.workspace }}/top/docs/analysis/data/annibale.fdt
           FD_BASE: "0xA7100000"
           FD_SIZE: "0x300000"
           PAYLOAD_BASE: "0xF0000000"
@@ -76,7 +85,7 @@ jobs:
           shasum -a 256 artifacts/loader-live.img | tee artifacts/SHA256SUMS
           printf 'source_commit=4cd05c997e80d2162ff0013dbff82fe0c2e695cc\n' >> artifacts/BUILD-INFO.txt
           printf 'uefi=annibale-smoke-dodgefv.fd (smoke, not final)\n' >> artifacts/BUILD-INFO.txt
-          printf 'dtb=empty.dtb (no external DTB; UEFI FD carries its own)\n' >> artifacts/BUILD-INFO.txt
+          printf 'dtb=docs/analysis/data/annibale.fdt 911637 bytes\n' >> artifacts/BUILD-INFO.txt
           printf 'payload=loader.efi + usb, no kernel or iOS images\n' >> artifacts/BUILD-INFO.txt
 
       - name: Upload loader image
