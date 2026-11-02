@@ -155,16 +155,24 @@ jobs:
           if old2 not in s:
               raise SystemExit('expected V assignment context not found')
           s = s.replace(old2, new2)
+          skip_outputs = ('metal_test', 'metal_dev', 'metal_stubdev',
+                          'metal_drv_test', 'metal_caps', 'metal_props',
+                          'RedwoodTriangle')
           lines = s.splitlines()
           out = []
           for line in lines:
-              if '-o obj/metal_test src/metal_test.m' in line:
-                  del out[-2:]
+              if any(('-o obj/' + name) in line for name in skip_outputs):
+                  if line.lstrip().startswith('$DYN'):
+                      continue
+                  while out and not out[-1].lstrip().startswith('$DYN'):
+                      out.pop()
+                  if out and out[-1].lstrip().startswith('$DYN'):
+                      out.pop()
                   continue
               out.append(line)
           s = '\n'.join(out) + '\n'
           open(p, 'w', encoding='utf-8').write(s)
-          print(s.count('inject_sb26_layers.c'), s.count('-arch arm64e'), s.count('obj/metal_test src/metal_test.m'))
+          print(s.count('inject_sb26_layers.c'), s.count('-arch arm64e'), s.count('obj/metal_dev'))
           PY
           grep -n 'inject_sb26_layers' userland/build.sh
           grep -n 'DYN="xnu-clang -arch arm64e' userland/build.sh
