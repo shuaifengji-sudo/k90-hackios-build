@@ -187,12 +187,24 @@ jobs:
           IOS: ../ios26
           REST: "1"
           GL: "1"
+          REBASE: "26"
           THEOS: /Users/runner/theos
         run: |
           set -euo pipefail
           export PATH="/opt/homebrew/opt/coreutils/libexec/gnubin:$PATH"
           sha256sum --version | head -n 1
           userland/build.sh 2>&1 | tee build-ios26.log
+
+      - name: Upload Mesa patch log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mesa-patch-log
+          path: |
+            kernel/xnu-deps/build/mesa/patch.log
+            kernel/xnu-deps/build/mesa/out/patch-rejects.txt
+          if-no-files-found: ignore
+          retention-days: 3
 
       - name: Collect images
         run: |
