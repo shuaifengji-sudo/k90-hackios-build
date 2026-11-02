@@ -200,6 +200,8 @@ jobs:
           export TMPDIR="${RUNNER_TEMP:-/tmp}"
           mkdir -p "$TMPDIR"
           sha256sum --version | head -n 1
+          sed -i '' 's/^REBASE=${REBASE:-}/REBASE=26/' tools/mk-mesa.sh
+          grep -n '^REBASE=' tools/mk-mesa.sh
           grep -n 'MESA_BUILD' userland/build.sh | head -n 4
           userland/build.sh 2>&1 | tee build-ios26.log
 
