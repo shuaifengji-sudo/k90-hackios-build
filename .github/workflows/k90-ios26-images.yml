@@ -40,10 +40,11 @@ jobs:
       - name: Install tools
         run: |
           set -euo pipefail
-          brew install sevenzip meson ninja pkg-config bison flex
+          brew install sevenzip meson ninja pkg-config bison flex coreutils
           /opt/homebrew/bin/7zz i | head -n 3
           meson --version
           ninja --version
+          /opt/homebrew/opt/coreutils/libexec/gnubin/sha256sum --version | head -n 1
           python3 -m venv "$HOME/ipsw-venv"
           . "$HOME/ipsw-venv/bin/activate"
           pip install --quiet cryptography
@@ -189,6 +190,8 @@ jobs:
           THEOS: /Users/runner/theos
         run: |
           set -euo pipefail
+          export PATH="/opt/homebrew/opt/coreutils/libexec/gnubin:$PATH"
+          sha256sum --version | head -n 1
           userland/build.sh 2>&1 | tee build-ios26.log
 
       - name: Collect images
