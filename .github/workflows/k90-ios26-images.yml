@@ -126,6 +126,14 @@ jobs:
           command -v ld64
           ld64 -v 2>&1 | head -n 3 || true
 
+      - name: Provide an iPhoneOS SDK for 16.5 helper programs
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/theos/sdks"
+          ln -sfn "$(xcrun --sdk iphoneos --show-sdk-path)" "$HOME/theos/sdks/iPhoneOS16.5.sdk"
+          test -f "$HOME/theos/sdks/iPhoneOS16.5.sdk/usr/include/stdio.h"
+          ls -ld "$HOME/theos/sdks/iPhoneOS16.5.sdk"
+
       - name: Include inject_sb26_layers.c in the 26 link
         working-directory: kernel
         run: |
