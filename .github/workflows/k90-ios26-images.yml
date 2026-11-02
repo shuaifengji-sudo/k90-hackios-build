@@ -126,6 +126,23 @@ jobs:
           command -v ld64
           ld64 -v 2>&1 | head -n 3 || true
 
+      - name: Include inject_sb26_layers.c in the 26 link
+        working-directory: kernel
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          p = 'userland/build.sh'
+          s = open(p, encoding='utf-8').read()
+          old = 'src/inject_sb26.c -o obj/libredwood-sb26.dylib'
+          new = 'src/inject_sb26.c src/inject_sb26_layers.c -o obj/libredwood-sb26.dylib'
+          if old not in s:
+              raise SystemExit('expected inject_sb26 link line not found')
+          s = s.replace(old, new)
+          open(p, 'w', encoding='utf-8').write(s)
+          print(s.count('inject_sb26_layers.c'))
+          PY
+          grep -n 'inject_sb26_layers' userland/build.sh
+
       - name: Build root26 and system26
         working-directory: kernel
         env:
