@@ -79,6 +79,9 @@ jobs:
 
       - name: Build XNU and prelink
         working-directory: main
+        env:
+          XNU_OWNER_DATA_VOLUME_UUID: 4C02592E-3207-4785-967B-D8D1C5314E1B
+          XNU_OWNER_CACHE_VOLUME_UUID: 8846FE78-2910-4297-AF97-D59BB6F8FC16
         run: |
           set -euo pipefail
           LOCAL="--local-drivers ../build/device/drivers --local-kits ../build/device/kits"
@@ -93,3 +96,4 @@ jobs:
             main/out/annibale/ipados-17.7.11-21H461/annibale/**
           if-no-files-found: warn
           retention-days: 7
+
