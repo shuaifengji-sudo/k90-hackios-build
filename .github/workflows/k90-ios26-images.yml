@@ -146,10 +146,20 @@ jobs:
           if old not in s:
               raise SystemExit('expected inject_sb26 link line not found')
           s = s.replace(old, new)
+          old2 = 'esac\n# ios165/rootfs and ios165/cryptex'
+          new2 = ('esac\n'
+                  '[ "$V" = 26 ] && DYN="xnu-clang -arch arm64e '
+                  '-isysroot ${THEOS:-$HOME/theos}/sdks/iPhoneOS16.5.sdk '
+                  '-O1 -miphoneos-version-min=26.0"\n'
+                  '# ios165/rootfs and ios165/cryptex')
+          if old2 not in s:
+              raise SystemExit('expected V assignment context not found')
+          s = s.replace(old2, new2)
           open(p, 'w', encoding='utf-8').write(s)
-          print(s.count('inject_sb26_layers.c'))
+          print(s.count('inject_sb26_layers.c'), s.count('-arch arm64e'))
           PY
           grep -n 'inject_sb26_layers' userland/build.sh
+          grep -n 'DYN="xnu-clang -arch arm64e' userland/build.sh
 
       - name: Build root26 and system26
         working-directory: kernel
