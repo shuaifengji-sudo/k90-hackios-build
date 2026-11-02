@@ -1,0 +1,28 @@
+name: k90-macos-probe
+
+on:
+  workflow_dispatch:
+
+jobs:
+  probe:
+    runs-on: macos-26
+    timeout-minutes: 15
+    steps:
+      - name: Probe macOS image build prerequisites
+        run: |
+          set -euo pipefail
+          echo '--- disk ---'
+          df -h /
+          echo '--- xcode ---'
+          xcodebuild -version
+          echo '--- tools ---'
+          command -v hdiutil
+          command -v aea || true
+          command -v 7zz || true
+          command -v 7z || true
+          command -v rsync
+          command -v python3
+          echo '--- space users ---'
+          du -sh /Applications/Xcode*.app 2>/dev/null || true
+          du -sh /Library/Developer/CoreSimulator 2>/dev/null || true
+          du -sh "$HOME/Library/Developer" 2>/dev/null || true
