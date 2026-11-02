@@ -44,12 +44,40 @@ jobs:
         run: |
           set -euo pipefail
           sudo apt-get update
-          sudo apt-get install -y git python3 python3-pip build-essential ccache rsync zlib1g-dev liblz4-dev curl xz-utils
+          sudo apt-get install -y git python3 python3-pip build-essential ccache rsync zlib1g-dev liblz4-dev curl xz-utils gawk file unzip zstd libzstd-dev bzip2 zip binutils uuid-dev libssl-dev libxml2-dev libbz2-dev liblzma-dev libncurses-dev python-is-python3 autoconf automake libtool pkg-config clang lld make perl flex bison m4
           curl -sL --fail https://github.com/ip7z/7zip/releases/download/24.09/7z2409-linux-x64.tar.xz -o /tmp/7z.tar.xz
           sudo mkdir -p /opt/7zip
           sudo tar -xJf /tmp/7z.tar.xz -C /opt/7zip
           sudo ln -sf /opt/7zip/7zz /usr/local/bin/7z
           7z i | head -n 5
+
+      - name: Install theos and iPhoneOS 16.5 SDK
+        run: |
+          set -euo pipefail
+          export THEOS="$HOME/theos"
+          git clone --depth 1 https://github.com/theos/theos.git "$THEOS"
+          git -C "$THEOS" fetch --depth 1 origin 304e0799973e8145f32e4ca2de6c747a84b758ce
+          git -C "$THEOS" checkout -q FETCH_HEAD
+          mkdir -p "$THEOS/toolchain"
+          curl -sL --fail https://github.com/L1ghtmann/llvm-project/releases/latest/download/iOSToolchain-x86_64.tar.xz | tar -xJ -C "$THEOS/toolchain/"
+          "$THEOS/bin/install-sdk" iPhoneOS16.5
+          test -x "$THEOS/toolchain/linux/iphone/bin/ld"
+          test -d "$THEOS/sdks/iPhoneOS16.5.sdk/usr/include"
+
+      - name: Build host tools and the Metal library
+        working-directory: kernel
+        env:
+          THEOS: /home/runner/theos
+        run: |
+          set -euo pipefail
+          xnu-deps/setup.sh --stage1
+          cd userland
+          mkdir -p obj
+          ../xnu-deps/host/bin/xnu-clang -arch arm64 -isysroot "$THEOS/sdks/iPhoneOS16.5.sdk" -O1 \
+            -dynamiclib -install_name /redwood/lib/libredwoodmetal.dylib \
+            -framework Foundation -framework IOKit -framework Metal -lobjc \
+            -o obj/libredwoodmetal.dylib src/redwoodmetal.m src/redwooddrawable.m
+          test -s obj/libredwoodmetal.dylib
 
       - name: Fetch iOS 16.5 files
         working-directory: kernel
@@ -62,6 +90,7 @@ jobs:
         env:
           REST: "1"
           PREBUILT: "1"
+          THEOS: /home/runner/theos
         run: |
           set -euo pipefail
           userland/build.sh
