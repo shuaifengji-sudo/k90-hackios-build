@@ -72,6 +72,16 @@ jobs:
           grep -q 'XNUP' BootShim/BootShim.S
           grep -q 'XnuLoader' Silicon/Silicium/SiliciumPkg/Library/BootManagerLib/BootManager.c
 
+      - name: Use system nasm for mu_nasm
+        run: |
+          set -euo pipefail
+          D="$GITHUB_WORKSPACE/Mu-Silicium/Mu_Basecore/BaseTools/Bin/mu_nasm_extdep"
+          mkdir -p "$D/Linux-x86-64"
+          echo 'version: 20016.1.1' > "$D/extdep_state.yaml"
+          ln -sf /usr/bin/nasm "$D/Linux-x86-64/nasm"
+          ln -sf /usr/bin/ndisasm "$D/Linux-x86-64/ndisasm"
+          ls -l "$D/Linux-x86-64"
+
       - name: Build annibale UEFI
         run: |
           set -euo pipefail
