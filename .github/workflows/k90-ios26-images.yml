@@ -93,6 +93,9 @@ jobs:
           IPSW_DIR: ${{ github.workspace }}/ipsw
         run: |
           set -euo pipefail
+          rm -f ios26/select-system.py
+          cp ios165/select-system.py ios26/select-system.py
+          python3 -m py_compile ios26/select-system.py
           ios26/fetch.sh
           du -sh ios26/rootfs ios26/cryptex ios26/cryptex-app
 
