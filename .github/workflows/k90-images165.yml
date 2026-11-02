@@ -1,0 +1,86 @@
+name: k90-images165
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  images165:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 360
+    steps:
+      - name: Free disk space
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: false
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          swap-storage: true
+
+      - name: Checkout kernel at pinned commit
+        uses: actions/checkout@v4
+        with:
+          repository: iola1999/hackios-xnu-kernel
+          ref: 4cd05c997e80d2162ff0013dbff82fe0c2e695cc
+          path: kernel
+          submodules: false
+          fetch-depth: 1
+
+      - name: Bring in userland overlay
+        working-directory: kernel
+        env:
+          USERLAND_URL: https://github.com/iola1999/hackios-xnu-userland.git
+          USERLAND_REF: k90-port
+        run: |
+          set -euo pipefail
+          common/setup.sh
+          test "$(common/ugit rev-parse HEAD)" = "1c46c68ac4fefd89b8e0a657a823e8d163db285b"
+
+      - name: Install image build dependencies and 7-Zip 24+
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y git python3 python3-pip build-essential ccache rsync zlib1g-dev liblz4-dev curl xz-utils
+          curl -sL --fail https://www.7-zip.org/a/7z2409-linux-x64.tar.xz -o /tmp/7z.tar.xz
+          sudo mkdir -p /opt/7zip
+          sudo tar -xJf /tmp/7z.tar.xz -C /opt/7zip
+          sudo ln -sf /opt/7zip/7zz /usr/local/bin/7z
+          7z i | head -n 5
+
+      - name: Fetch iOS 16.5 files
+        working-directory: kernel
+        run: |
+          set -euo pipefail
+          ios165/fetch.sh
+
+      - name: Build root and system APFS images
+        working-directory: kernel
+        env:
+          REST: "1"
+          PREBUILT: "1"
+        run: |
+          set -euo pipefail
+          userland/build.sh
+
+      - name: Collect images
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          cp kernel/userland/root.apfs artifacts/root.apfs
+          cp kernel/userland/system.apfs artifacts/system.apfs
+          shasum -a 256 artifacts/root.apfs artifacts/system.apfs | tee artifacts/SHA256SUMS
+          printf 'source_commit=4cd05c997e80d2162ff0013dbff82fe0c2e695cc\n' >> artifacts/BUILD-INFO.txt
+          printf 'line=iOS16.5 REST=1 PREBUILT=1\n' >> artifacts/BUILD-INFO.txt
+          ls -l artifacts
+
+      - name: Upload APFS artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: k90-apfs-165
+          path: artifacts
+          if-no-files-found: error
+          retention-days: 7
