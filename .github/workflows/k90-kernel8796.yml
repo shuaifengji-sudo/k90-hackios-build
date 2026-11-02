@@ -45,7 +45,11 @@ jobs:
           git -C "$THEOS" checkout -q FETCH_HEAD
           mkdir -p "$THEOS/toolchain"
           curl -sL --fail https://github.com/L1ghtmann/llvm-project/releases/latest/download/iOSToolchain-x86_64.tar.xz | tar -xJ -C "$THEOS/toolchain/"
-          "$THEOS/bin/install-sdk" iPhoneOS16.5
+          for i in 1 2 3; do
+            "$THEOS/bin/install-sdk" iPhoneOS16.5 && break
+            echo "install-sdk failed (attempt $i); retrying"
+            sleep 30
+          done
           test -x "$THEOS/toolchain/linux/iphone/bin/ld"
           test -d "$THEOS/sdks/iPhoneOS16.5.sdk/usr/include"
 
