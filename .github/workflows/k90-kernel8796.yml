@@ -64,8 +64,7 @@ jobs:
         run: |
           set -euo pipefail
           printf '\nbsd/dev/redwood_threads.c\t\tstandard\n' >> xnu-src/xnu-8796.121.2/bsd/conf/files
-          printf '\nosfmk/kern/redwood_threads.c\t\tstandard\n' >> xnu-src/xnu-8796.121.2/osfmk/conf/files
-          grep -n 'redwood_threads' xnu-src/xnu-8796.121.2/bsd/conf/files xnu-src/xnu-8796.121.2/osfmk/conf/files
+          grep -n 'redwood_threads' xnu-src/xnu-8796.121.2/bsd/conf/files
 
       - name: Build host tools and SDK glue
         working-directory: kernel
