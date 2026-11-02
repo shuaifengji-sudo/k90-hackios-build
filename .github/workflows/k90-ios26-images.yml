@@ -40,8 +40,10 @@ jobs:
       - name: Install tools
         run: |
           set -euo pipefail
-          brew install sevenzip
+          brew install sevenzip meson ninja pkg-config bison flex
           /opt/homebrew/bin/7zz i | head -n 3
+          meson --version
+          ninja --version
           python3 -m venv "$HOME/ipsw-venv"
           . "$HOME/ipsw-venv/bin/activate"
           pip install --quiet cryptography
@@ -183,6 +185,7 @@ jobs:
         env:
           IOS: ../ios26
           REST: "1"
+          GL: "1"
           THEOS: /Users/runner/theos
         run: |
           set -euo pipefail
@@ -193,16 +196,15 @@ jobs:
           set -euo pipefail
           mkdir -p artifacts
           cp kernel/userland/root26.apfs artifacts/root26.apfs
-          cp kernel/userland/system26.apfs artifacts/system26.apfs
           shasum -a 256 artifacts/*.apfs | tee artifacts/SHA256SUMS
           printf 'source_commit=4cd05c997e80d2162ff0013dbff82fe0c2e695cc\n' >> artifacts/BUILD-INFO.txt
-          printf 'line=iOS26.6.2 23G90 REST=1\n' >> artifacts/BUILD-INFO.txt
+          printf 'line=iOS26.6.2 23G90 REST=1 GL=1\n' >> artifacts/BUILD-INFO.txt
           ls -lh artifacts
 
-      - name: Upload iOS 26 images
+      - name: Upload iOS 26 GPU root
         uses: actions/upload-artifact@v4
         with:
-          name: k90-apfs-26
+          name: k90-root26-gpu
           path: artifacts
           if-no-files-found: error
           retention-days: 7
