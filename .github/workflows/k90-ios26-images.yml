@@ -157,7 +157,7 @@ jobs:
           s = s.replace(old2, new2)
           skip_outputs = ('metal_test', 'metal_dev', 'metal_stubdev',
                           'metal_drv_test', 'metal_caps', 'metal_props',
-                          'RedwoodTriangle')
+                          'RedwoodTriangle', 'libredwood-store')
           lines = s.splitlines()
           out = []
           for line in lines:
