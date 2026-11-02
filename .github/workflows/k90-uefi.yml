@@ -1,0 +1,89 @@
+name: k90-uefi
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  uefi:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 180
+    steps:
+      - name: Free disk space
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: false
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          swap-storage: true
+
+      - name: Checkout HackiOS kernel at pinned commit
+        uses: actions/checkout@v4
+        with:
+          repository: iola1999/hackios-xnu-kernel
+          ref: 4cd05c997e80d2162ff0013dbff82fe0c2e695cc
+          path: kernel
+          submodules: false
+          fetch-depth: 1
+
+      - name: Install UEFI build dependencies
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y git curl ca-certificates build-essential clang lld llvm nasm acpica-tools uuid-dev python3 python3-pip python3-venv libssl-dev libglib2.0-dev pkg-config gcc-aarch64-linux-gnu
+
+      - name: Clone public Mu-Silicium
+        run: |
+          set -euo pipefail
+          git clone --recursive https://github.com/Project-Silicium/Mu-Silicium.git "$GITHUB_WORKSPACE/Mu-Silicium"
+          git -C "$GITHUB_WORKSPACE/Mu-Silicium" checkout -q 6b3d90b79e191e08171bfedd3980234a7e49d340
+          git -C "$GITHUB_WORKSPACE/Mu-Silicium" submodule update --init --recursive
+
+      - name: Apply HackiOS XNUP patch and overlays
+        run: |
+          set -euo pipefail
+          cd "$GITHUB_WORKSPACE/Mu-Silicium"
+          git apply --3way "$GITHUB_WORKSPACE/kernel/uefi/mu-silicium.patch"
+          cp -r "$GITHUB_WORKSPACE/kernel/uefi/files/." .
+          cp -r "$GITHUB_WORKSPACE/kernel/uefi/annibale/files/." .
+          test -f Silicon/Silicium/SiliciumPkg/Library/BootManagerLib/XnuLoader.c
+          grep -q 'XNUP' BootShim/BootShim.S
+          grep -q 'XnuLoader' Silicon/Silicium/SiliciumPkg/Library/BootManagerLib/BootManager.c
+
+      - name: Build annibale UEFI
+        run: |
+          set -euo pipefail
+          cd "$GITHUB_WORKSPACE/Mu-Silicium"
+          python3 -m venv venv
+          . venv/bin/activate
+          pip install --upgrade pip
+          pip install -r pip-requirements.txt
+          python3 build_uefi.py -d annibale -r RELEASE 2>&1 | tee build-uefi.log
+
+      - name: Collect UEFI artifact
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          FD="$GITHUB_WORKSPACE/Mu-Silicium/Build/annibalePkg/RELEASE_CLANGPDB/FV/SILICIUM_UEFI.fd"
+          test -f "$FD"
+          test "$(stat -c %s "$FD")" = "3145728"
+          cp "$FD" artifacts/SILICIUM_UEFI.fd
+          if [ -f "$GITHUB_WORKSPACE/Mu-Silicium/BootShim/BootShim.bin" ]; then
+            cp "$GITHUB_WORKSPACE/Mu-Silicium/BootShim/BootShim.bin" artifacts/BootShim.bin
+          fi
+          shasum -a 256 artifacts/* | tee artifacts/SHA256SUMS
+          printf 'source_commit=4cd05c997e80d2162ff0013dbff82fe0c2e695cc\n' >> artifacts/BUILD-INFO.txt
+          printf 'mu_silicium=6b3d90b79e191e08171bfedd3980234a7e49d340\n' >> artifacts/BUILD-INFO.txt
+          printf 'platform=annibalePkg RELEASE_CLANGPDB\n' >> artifacts/BUILD-INFO.txt
+
+      - name: Upload UEFI artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: k90-uefi-annibale
+          path: artifacts
+          if-no-files-found: error
+          retention-days: 7
