@@ -1,0 +1,153 @@
+name: k90-ios26-images
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  images26:
+    runs-on: macos-26
+    timeout-minutes: 360
+    steps:
+      - name: Free disk space
+        run: |
+          set -euo pipefail
+          df -h /
+          sudo rm -rf /Library/Developer/CoreSimulator/Caches/* 2>/dev/null || true
+          sudo rm -rf "$HOME/Library/Developer/Xcode/DerivedData" 2>/dev/null || true
+          df -h /
+
+      - name: Checkout kernel at pinned commit
+        uses: actions/checkout@v4
+        with:
+          repository: iola1999/hackios-xnu-kernel
+          ref: 4cd05c997e80d2162ff0013dbff82fe0c2e695cc
+          path: kernel
+          submodules: false
+          fetch-depth: 1
+
+      - name: Checkout top workspace for IPSW tools
+        uses: actions/checkout@v4
+        with:
+          repository: iola1999/hackios-redmi-k90-annibale
+          ref: f36fc12afe2c0ac8e56a60677f83789d32c6f779
+          path: top
+          submodules: false
+          fetch-depth: 1
+
+      - name: Install tools
+        run: |
+          set -euo pipefail
+          brew install sevenzip
+          /opt/homebrew/bin/7zz i | head -n 3
+          python3 -m venv "$HOME/ipsw-venv"
+          . "$HOME/ipsw-venv/bin/activate"
+          pip install --quiet cryptography
+          python3 -c 'import cryptography; print("cryptography ok")'
+
+      - name: Download iOS 26.6.2 IPSW members
+        env:
+          IPSW_URL: https://updates.cdn-apple.com/2026SummerFCS/c2f9fa07-0acc-4038-99f4-d7a4b1ac9c06/iPhone18,3_26.6.2_23G90_Restore.ipsw
+          IPSW_SIZE: "11481186987"
+        run: |
+          set -euo pipefail
+          mkdir -p ipsw
+          cd ipsw
+          . "$HOME/ipsw-venv/bin/activate"
+          python3 "$GITHUB_WORKSPACE/top/tools/ipsw/fetch.py" 094-96558-090.dmg.aea os.dmg.aea "$IPSW_URL" "$IPSW_SIZE"
+          python3 "$GITHUB_WORKSPACE/top/tools/ipsw/fetch.py" 094-95851-092.dmg.aea systemos.dmg.aea "$IPSW_URL" "$IPSW_SIZE"
+          python3 "$GITHUB_WORKSPACE/top/tools/ipsw/fetch.py" 094-96441-094.dmg appos.dmg "$IPSW_URL" "$IPSW_SIZE"
+          ls -l
+
+      - name: Decrypt AEA images
+        run: |
+          set -euo pipefail
+          cd ipsw
+          . "$HOME/ipsw-venv/bin/activate"
+          for name in os systemos; do
+            key=$(python3 "$GITHUB_WORKSPACE/top/tools/ipsw/aea-key.py" "$name.dmg.aea")
+            /usr/bin/aea decrypt -i "$name.dmg.aea" -o "$name.dmg" -key-value "base64:$key"
+            test -s "$name.dmg"
+            rm -f "$name.dmg.aea"
+          done
+          test -s os.dmg
+          test -s systemos.dmg
+          test -s appos.dmg
+          ls -lh
+
+      - name: Bring in userland overlay
+        working-directory: kernel
+        env:
+          USERLAND_URL: https://github.com/iola1999/hackios-xnu-userland.git
+          USERLAND_REF: k90-port
+        run: |
+          set -euo pipefail
+          common/setup.sh
+          test "$(common/ugit rev-parse HEAD)" = "1c46c68ac4fefd89b8e0a657a823e8d163db285b"
+
+      - name: Fetch iOS 26 files
+        working-directory: kernel
+        env:
+          IPSW_DIR: ${{ github.workspace }}/ipsw
+        run: |
+          set -euo pipefail
+          ios26/fetch.sh
+          du -sh ios26/rootfs ios26/cryptex ios26/cryptex-app
+
+      - name: Prepare macOS 26 SDK
+        working-directory: kernel
+        run: |
+          set -euo pipefail
+          xnu26/deps-macos.sh --stage1
+          test -d xnu-deps/26/sdk/iPhoneOS.sdk/usr/include
+
+      - name: Use Apple clang for arm64e userland
+        working-directory: kernel
+        run: |
+          set -euo pipefail
+          mkdir -p xnu-deps/host/bin
+          cat > xnu-deps/host/bin/xnu-clang <<'EOF'
+          #!/bin/bash
+          exec /usr/bin/xcrun --sdk iphoneos clang "$@"
+          EOF
+          chmod +x xnu-deps/host/bin/xnu-clang
+          cp xnu-deps/host/bin/xnu-clang xnu-deps/host/bin/xnu-clang++
+          xnu-deps/host/bin/xnu-clang --version
+
+      - name: Make ld64 visible to build.sh
+        run: |
+          set -euo pipefail
+          sudo ln -sf /usr/bin/ld /usr/local/bin/ld64
+          command -v ld64
+          ld64 -v 2>&1 | head -n 3 || true
+
+      - name: Build root26 and system26
+        working-directory: kernel
+        env:
+          IOS: ../ios26
+          REST: "1"
+          THEOS: /Users/runner/theos
+        run: |
+          set -euo pipefail
+          userland/build.sh 2>&1 | tee build-ios26.log
+
+      - name: Collect images
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          cp kernel/userland/root26.apfs artifacts/root26.apfs
+          cp kernel/userland/system26.apfs artifacts/system26.apfs
+          shasum -a 256 artifacts/*.apfs | tee artifacts/SHA256SUMS
+          printf 'source_commit=4cd05c997e80d2162ff0013dbff82fe0c2e695cc\n' >> artifacts/BUILD-INFO.txt
+          printf 'line=iOS26.6.2 23G90 REST=1\n' >> artifacts/BUILD-INFO.txt
+          ls -lh artifacts
+
+      - name: Upload iOS 26 images
+        uses: actions/upload-artifact@v4
+        with:
+          name: k90-apfs-26
+          path: artifacts
+          if-no-files-found: error
+          retention-days: 7
