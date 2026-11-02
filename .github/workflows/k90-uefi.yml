@@ -47,7 +47,25 @@ jobs:
         run: |
           set -euo pipefail
           cd "$GITHUB_WORKSPACE/Mu-Silicium"
-          git apply --3way "$GITHUB_WORKSPACE/kernel/uefi/mu-silicium.patch"
+          git apply --3way --exclude=Silicon/Silicium/SiliciumPkg/Library/BootManagerLib/BootManager.c "$GITHUB_WORKSPACE/kernel/uefi/mu-silicium.patch"
+          python3 - "$GITHUB_WORKSPACE/kernel/uefi/mu-silicium.patch" Silicon/Silicium/SiliciumPkg/Library/BootManagerLib/BootManager.c <<'PY'
+          import sys
+          patch, out = sys.argv[1], sys.argv[2]
+          lines = open(patch, encoding='utf-8').read().splitlines()
+          inside = False
+          body = []
+          for line in lines:
+              if line.startswith('diff --git ') and 'BootManager.c' in line:
+                  inside = True
+                  continue
+              if inside and line.startswith('diff --git '):
+                  break
+              if inside and line.startswith('+') and not line.startswith('+++'):
+                  body.append(line[1:])
+          if not body:
+              sys.exit('no added lines for BootManager.c')
+          open(out, 'w', encoding='utf-8').write('\n'.join(body) + '\n')
+          PY
           cp -r "$GITHUB_WORKSPACE/kernel/uefi/files/." .
           cp -r "$GITHUB_WORKSPACE/kernel/uefi/annibale/files/." .
           test -f Silicon/Silicium/SiliciumPkg/Library/BootManagerLib/XnuLoader.c
