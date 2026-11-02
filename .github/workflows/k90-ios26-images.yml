@@ -158,6 +158,11 @@ jobs:
           if old2 not in s:
               raise SystemExit('expected V assignment context not found')
           s = s.replace(old2, new2)
+          old3 = 'env $MESA_BUILD ../tools/mk-mesa.sh'
+          new3 = 'env REBASE=26 $MESA_BUILD ../tools/mk-mesa.sh'
+          if old3 not in s:
+              raise SystemExit('expected Mesa invocation not found')
+          s = s.replace(old3, new3)
           skip_outputs = ('metal_test', 'metal_dev', 'metal_stubdev',
                           'metal_drv_test', 'metal_caps', 'metal_props',
                           'RedwoodTriangle', 'libredwood-store',
@@ -192,7 +197,10 @@ jobs:
         run: |
           set -euo pipefail
           export PATH="/opt/homebrew/opt/coreutils/libexec/gnubin:$PATH"
+          export TMPDIR="${RUNNER_TEMP:-/tmp}"
+          mkdir -p "$TMPDIR"
           sha256sum --version | head -n 1
+          grep -n 'MESA_BUILD' userland/build.sh | head -n 4
           userland/build.sh 2>&1 | tee build-ios26.log
 
       - name: Upload Mesa patch log on failure
