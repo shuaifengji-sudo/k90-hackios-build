@@ -1,0 +1,60 @@
+name: k90-ios26-split
+
+on:
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  split:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Download k90-apfs-26 artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: k90-apfs-26
+          run-id: 41380133469
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: images
+
+      - name: Inspect and split system26
+        run: |
+          set -euo pipefail
+          find images -maxdepth 2 -type f -printf '%p %s\n'
+          SYS=$(find images -name system26.apfs -print -quit)
+          ROOT=$(find images -name root26.apfs -print -quit)
+          test -n "$SYS"
+          test -n "$ROOT"
+          cp "$ROOT" root26.apfs
+          split -b 1000M -d --numeric-suffixes=0 "$SYS" sys26.part.
+          ls -lh root26.apfs sys26.part.*
+
+      - name: Upload root26
+        uses: actions/upload-artifact@v4
+        with:
+          name: k90-root26
+          path: root26.apfs
+          if-no-files-found: error
+          retention-days: 3
+
+      - name: Upload system26 part 0
+        uses: actions/upload-artifact@v4
+        with: {name: k90-sys26-part-0, path: sys26.part.00, if-no-files-found: error, retention-days: 3}
+      - name: Upload system26 part 1
+        uses: actions/upload-artifact@v4
+        with: {name: k90-sys26-part-1, path: sys26.part.01, if-no-files-found: error, retention-days: 3}
+      - name: Upload system26 part 2
+        uses: actions/upload-artifact@v4
+        with: {name: k90-sys26-part-2, path: sys26.part.02, if-no-files-found: error, retention-days: 3}
+      - name: Upload system26 part 3
+        uses: actions/upload-artifact@v4
+        with: {name: k90-sys26-part-3, path: sys26.part.03, if-no-files-found: error, retention-days: 3}
+      - name: Upload system26 part 4
+        uses: actions/upload-artifact@v4
+        with: {name: k90-sys26-part-4, path: sys26.part.04, if-no-files-found: error, retention-days: 3}
+      - name: Upload system26 part 5
+        uses: actions/upload-artifact@v4
+        with: {name: k90-sys26-part-5, path: sys26.part.05, if-no-files-found: error, retention-days: 3}
