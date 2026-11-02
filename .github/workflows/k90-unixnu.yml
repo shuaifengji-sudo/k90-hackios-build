@@ -85,7 +85,16 @@ jobs:
         run: |
           set -euo pipefail
           LOCAL="--local-drivers ../build/device/drivers --local-kits ../build/device/kits"
-          ./unixnu kernel -j 3 $LOCAL 2>&1 | tee "$UNIXNU_OUTDIR/logs/actions-build.log"
+          ok=0
+          for attempt in 1 2 3 4 5; do
+            echo "=== unixnu kernel attempt $attempt ==="
+            if ./unixnu kernel -j 3 $LOCAL 2>&1 | tee "$UNIXNU_OUTDIR/logs/actions-build-$attempt.log"; then
+              ok=1
+              break
+            fi
+            sleep 30
+          done
+          test "$ok" = 1
 
       - name: Upload result and logs
         if: always()
