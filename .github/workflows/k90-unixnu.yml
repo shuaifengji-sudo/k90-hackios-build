@@ -1,0 +1,95 @@
+name: k90-unixnu-annibale
+
+on:
+  workflow_dispatch:
+    inputs:
+      skip_tests:
+        description: Skip format/contract host tests
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 360
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout build repository
+        uses: actions/checkout@v4
+        with:
+          path: build
+
+      - name: Extract annibale device profile
+        working-directory: build
+        run: |
+          set -euo pipefail
+          tar -xzf unixnu-annibale-device.tar.gz
+          mv UniXNU-annibale device
+          test -f device/board.toml
+          cat device/upstream.rev
+
+      - name: Read UniXNU main pin
+        id: main
+        working-directory: build
+        run: |
+          revision=$(cat device/upstream.rev)
+          [[ "$revision" =~ ^[0-9a-f]{40}$ ]]
+          echo "revision=$revision" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout UniXNU main
+        uses: actions/checkout@v4
+        with:
+          repository: IssacL04/UniXNU_Enc3l
+          ref: ${{ steps.main.outputs.revision }}
+          path: main
+          submodules: recursive
+          persist-credentials: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install host tools
+        run: |
+          set -euo pipefail
+          brew install cmake ninja unifdef llvm mtools openssl@3 dtc
+          echo "$(brew --prefix llvm)/bin" >> "$GITHUB_PATH"
+          xcodebuild -version
+          xcrun --sdk iphoneos --show-sdk-path
+
+      - name: Resolve annibale profile and sources
+        working-directory: main
+        run: |
+          set -euo pipefail
+          LOCAL="--local-drivers ../build/device/drivers --local-kits ../build/device/kits"
+          ./unixnu defconfig annibale_defconfig -D ../build/device $LOCAL
+          ./unixnu fetch xnu libplatform libdispatch AvailabilityVersions libpthread corecrypto-2023 IOStorageFamily $LOCAL
+          ./unixnu tree $LOCAL
+          OUT="$PWD/out/annibale/ipados-17.7.11-21H461/annibale"
+          mkdir -p "$OUT/logs"
+          echo "UNIXNU_OUTDIR=$OUT" >> "$GITHUB_ENV"
+          echo "UNIXNU_TREE=$OUT/tree" >> "$GITHUB_ENV"
+          echo "PYTHONPATH=$PWD/scripts" >> "$GITHUB_ENV"
+          ./unixnu status --json -D ../build/device $LOCAL > "$OUT/status.json" || true
+
+      - name: Build XNU and prelink
+        working-directory: main
+        run: |
+          set -euo pipefail
+          LOCAL="--local-drivers ../build/device/drivers --local-kits ../build/device/kits"
+          ./unixnu kernel -j 3 $LOCAL 2>&1 | tee "$UNIXNU_OUTDIR/logs/actions-build.log"
+
+      - name: Upload result and logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: annibale-unixnu-${{ github.run_number }}
+          path: |
+            main/out/annibale/ipados-17.7.11-21H461/annibale/**
+          if-no-files-found: warn
+          retention-days: 7
